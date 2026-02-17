@@ -45,6 +45,66 @@ function isMarkdownBlock(block: JsonBlock): block is JsonMarkdownBlock {
   return block.type === 'markdown';
 }
 
+function normalizeCodeIndentation(markdown: string): string {
+  const lines = markdown.split('\n');
+
+  const openingBlockRegex = /^(\s*)(`{3,}|~{3,})(.*)$/;
+
+  for (let index = 0; index < lines.length; index++) {
+    const openingMatch = lines[index].match(openingBlockRegex);
+
+    if (!openingMatch) {
+      continue;
+    }
+
+    const openingBlock = openingMatch[2];
+    const openingBlockChar = openingBlock[0];
+    const openingBlockLength = openingBlock.length;
+    const openingBlockInfo = openingMatch[3];
+
+    let closingIndex = -1;
+
+    for (let cursor = index + 1; cursor < lines.length; cursor++) {
+      const closingMatch = lines[cursor].match(/^\s*(`{3,}|~{3,})\s*$/);
+
+      if (!closingMatch) {
+        continue;
+      }
+
+      const closingBlock = closingMatch[1];
+
+      if (closingBlock[0] !== openingBlockChar || closingBlock.length < openingBlockLength) {
+        continue;
+      }
+
+      closingIndex = cursor;
+      break;
+    }
+
+    if (closingIndex === -1) {
+      continue;
+    }
+
+    let firstContentIndentation = openingMatch[1];
+
+    for (let cursor = index + 1; cursor < closingIndex; cursor++) {
+      if (lines[cursor].trim().length === 0) {
+        continue;
+      }
+
+      const contentIndentMatch = lines[cursor].match(/^\s*/);
+      firstContentIndentation = contentIndentMatch?.[0] ?? '';
+      break;
+    }
+
+    lines[index] = `${firstContentIndentation}${openingBlock}${openingBlockInfo}`;
+    lines[closingIndex] = `${firstContentIndentation}${openingBlock}`;
+    index = closingIndex;
+  }
+
+  return lines.join('\n');
+}
+
 // ============================================================================
 // Editor Toolbar Component
 // ============================================================================
@@ -560,7 +620,7 @@ export function MarkdownBlockForm({
   // Switch to raw mode - get Markdown from editor
   const handleSwitchToRaw = useCallback(() => {
     if (editor) {
-      const markdown = editor.getMarkdown() || editor.getText();
+      const markdown = normalizeCodeIndentation(editor.getMarkdown() || editor.getText());
       setRawContent(markdown);
     }
     setEditMode('raw');
@@ -582,7 +642,7 @@ export function MarkdownBlockForm({
       if (editMode === 'raw') {
         markdown = rawContent.trim();
       } else if (editor) {
-        markdown = editor.getMarkdown() || editor.getText();
+        markdown = normalizeCodeIndentation(editor.getMarkdown() || editor.getText());
       } else {
         return;
       }
